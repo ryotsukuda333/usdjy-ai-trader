@@ -81,9 +81,9 @@ def main():
         # Task 8.4: Execute backtest and visualize
         print("\n[8.4] Executing backtest and visualizing results...")
 
-        # Run backtest
-        print("  Running backtest simulation...")
-        trades = run_backtest(df_ohlcv, df_features, predictions)
+        # Run backtest with dynamic risk management
+        print("  Running backtest simulation with dynamic risk management...")
+        trades = run_backtest(df_ohlcv, df_features, predictions, use_dynamic_risk=True)
 
         if len(trades) > 0:
             print(f"  ✓ Backtest complete: {len(trades)} trades")

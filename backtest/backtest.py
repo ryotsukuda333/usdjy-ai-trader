@@ -1,41 +1,48 @@
 """Backtest Engine module for simulation and trade tracking.
 
 Implements BUY/SELL signal logic, stop loss/take profit execution,
-trade tracking with performance metrics.
+trade tracking with performance metrics. Supports both static and
+dynamic risk management.
 
-Tasks: 6.1, 6.2, 6.3
+Tasks: 6.1, 6.2, 6.3, 5.1, 5.2
 """
 
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from typing import Optional
 
 from utils.errors import BacktestError
+from trader.dynamic_risk_manager import DynamicRiskManager, initialize_risk_manager
 
 
-def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame, 
-                predictions: np.ndarray) -> pd.DataFrame:
+def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame,
+                predictions: np.ndarray, use_dynamic_risk: bool = True) -> pd.DataFrame:
     """Run backtest simulation with signal logic and trade tracking.
 
     Implements time-series backtest with:
     - BUY signals: model_pred==1 AND rsi<50 AND ma20_slope>0
     - SELL signals: model_pred==0 AND rsi>50 AND ma20_slope<0
-    - Stop Loss: price <= entry_price * 0.997 (-0.3%)
-    - Take Profit: price >= entry_price * 1.006 (+0.6%)
+    - Stop Loss & Take Profit:
+        - Static mode: SL = -0.3%, TP = +0.6%
+        - Dynamic mode: Adjusted by volatility factor (volatility-aware)
     - Priority: SL > TP > SELL signal
     Requirement 5: Backtest simulation with trade tracking.
+    Tasks: 5.1, 5.2 - Dynamic risk management
 
     Args:
         df_ohlcv: OHLCV DataFrame with DatetimeIndex
                  Columns: ['Open', 'High', 'Low', 'Close', 'Volume']
         df_features: Features DataFrame with same length as df_ohlcv
-                    Must include: 'rsi14', 'ma20_slope'
+                    Must include: 'rsi14', 'ma20_slope', 'volatility_20'
         predictions: Array of binary predictions (0 or 1) with length = len(df_ohlcv)
+        use_dynamic_risk: If True, uses volatility-adjusted TP/SL (default: True)
 
     Returns:
         pd.DataFrame: Trade records with columns:
                      entry_date, entry_price, exit_date, exit_price,
-                     return_percent, win_loss, exit_reason
+                     return_percent, win_loss, exit_reason, tp_level (dynamic),
+                     sl_level (dynamic)
 
     Raises:
         BacktestError: If inputs invalid or data mismatched
@@ -70,10 +77,24 @@ def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame,
             technical_message=f"Available features: {list(df_features.columns)}"
         )
 
+    # Initialize dynamic risk manager if requested
+    risk_manager = None
+    if use_dynamic_risk:
+        if 'volatility_20' not in df_features.columns:
+            raise BacktestError(
+                error_code="MISSING_VOLATILITY",
+                user_message="Dynamic risk management requires volatility_20 feature",
+                technical_message=f"Available features: {list(df_features.columns)}"
+            )
+        print("  ⚙️  Initializing dynamic risk manager...")
+        risk_manager = initialize_risk_manager(df_features)
+
     trades = []
     position_open = False
     entry_date = None
     entry_price = None
+    dynamic_tp_level = None
+    dynamic_sl_level = None
 
     try:
         for i in range(len(df_ohlcv)):
@@ -89,15 +110,32 @@ def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame,
                     position_open = True
                     entry_date = current_date
                     entry_price = current_close
-                    print(f"📈 BUY signal at {entry_date}: price={entry_price:.2f}")
+
+                    # Calculate dynamic or static TP/SL
+                    if risk_manager is not None:
+                        # Dynamic risk management (Task 5.1, 5.2)
+                        current_vol = df_features['volatility_20'].iloc[i]
+                        dynamic_tp_level, dynamic_sl_level = risk_manager.get_dynamic_tp_sl(
+                            entry_price, current_vol
+                        )
+                        tp_pct = ((dynamic_tp_level - entry_price) / entry_price) * 100
+                        sl_pct = ((entry_price - dynamic_sl_level) / entry_price) * 100
+                        print(f"📈 BUY signal at {entry_date}: price={entry_price:.2f}")
+                        print(f"   Dynamic TP: {dynamic_tp_level:.5f} (+{tp_pct:.3f}%), SL: {dynamic_sl_level:.5f} (-{sl_pct:.3f}%)")
+                    else:
+                        # Static risk management (original)
+                        dynamic_tp_level = entry_price * 1.006
+                        dynamic_sl_level = entry_price * 0.997
+                        print(f"📈 BUY signal at {entry_date}: price={entry_price:.2f} (static TP/SL)")
 
             else:
                 # Position is open - check exit conditions
                 # Priority: SL > TP > SELL signal
+                # Uses dynamic_tp_level and dynamic_sl_level (set at BUY)
 
-                # 1. Check Stop Loss: price <= entry_price * 0.997
-                if current_close <= entry_price * 0.997:
-                    exit_price = entry_price * 0.997
+                # 1. Check Stop Loss: price <= dynamic_sl_level
+                if current_close <= dynamic_sl_level:
+                    exit_price = dynamic_sl_level
                     return_pct = ((exit_price - entry_price) / entry_price) * 100
                     win_loss = 1 if return_pct >= 0 else 0
                     trades.append({
@@ -107,14 +145,16 @@ def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame,
                         'exit_price': exit_price,
                         'return_percent': return_pct,
                         'win_loss': win_loss,
-                        'exit_reason': 'stop_loss'
+                        'exit_reason': 'stop_loss',
+                        'tp_level': dynamic_tp_level,
+                        'sl_level': dynamic_sl_level
                     })
                     print(f"🛑 STOP LOSS at {current_date}: price={exit_price:.2f}, return={return_pct:.3f}%")
                     position_open = False
 
-                # 2. Check Take Profit: price >= entry_price * 1.006
-                elif current_close >= entry_price * 1.006:
-                    exit_price = entry_price * 1.006
+                # 2. Check Take Profit: price >= dynamic_tp_level
+                elif current_close >= dynamic_tp_level:
+                    exit_price = dynamic_tp_level
                     return_pct = ((exit_price - entry_price) / entry_price) * 100
                     win_loss = 1  # Always a win
                     trades.append({
@@ -124,7 +164,9 @@ def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame,
                         'exit_price': exit_price,
                         'return_percent': return_pct,
                         'win_loss': win_loss,
-                        'exit_reason': 'take_profit'
+                        'exit_reason': 'take_profit',
+                        'tp_level': dynamic_tp_level,
+                        'sl_level': dynamic_sl_level
                     })
                     print(f"💰 TAKE PROFIT at {current_date}: price={exit_price:.2f}, return={return_pct:.3f}%")
                     position_open = False
@@ -141,7 +183,9 @@ def run_backtest(df_ohlcv: pd.DataFrame, df_features: pd.DataFrame,
                         'exit_price': exit_price,
                         'return_percent': return_pct,
                         'win_loss': win_loss,
-                        'exit_reason': 'signal'
+                        'exit_reason': 'signal',
+                        'tp_level': dynamic_tp_level,
+                        'sl_level': dynamic_sl_level
                     })
                     print(f"📉 SELL signal at {current_date}: price={exit_price:.2f}, return={return_pct:.3f}%")
                     position_open = False
