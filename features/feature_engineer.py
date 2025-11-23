@@ -145,6 +145,43 @@ def engineer_features(df_ohlcv: pd.DataFrame) -> pd.DataFrame:
             technical_message=f"Error calculating pct_change: {str(e)}"
         )
 
+    # Step 8.5: Calculate VIX-like volatility indicators
+    try:
+        # Rolling volatility (standard deviation of returns)
+        returns = df['Close'].pct_change()
+        df['volatility_5'] = returns.rolling(window=5).std() * 100
+        df['volatility_10'] = returns.rolling(window=10).std() * 100
+        df['volatility_20'] = returns.rolling(window=20).std() * 100
+
+        # High-Low ratio (intraday volatility proxy)
+        df['hl_ratio'] = (df['High'] - df['Low']) / df['Close'] * 100
+        df['hl_ratio_5'] = df['hl_ratio'].rolling(window=5).mean()
+
+        # Average True Range (ATR) alternative: (High - Low) range
+        df['price_range'] = (df['High'] - df['Low']) / df['Close'] * 100
+        df['price_range_10'] = df['price_range'].rolling(window=10).mean()
+    except Exception as e:
+        raise FeatureEngineeringError(
+            error_code="VOLATILITY_CALCULATION_ERROR",
+            user_message="Failed to calculate volatility indicators",
+            technical_message=f"Error calculating volatility: {str(e)}"
+        )
+
+    # Step 8.6: Calculate correlation features (autocorrelation)
+    try:
+        # Autocorrelation of returns (market momentum persistence)
+        df['autocorr_5'] = returns.rolling(window=6).apply(lambda x: x.autocorr(), raw=False)
+
+        # Close-to-MA correlation (trend strength)
+        df['close_ma5_corr'] = df['Close'].rolling(window=10).corr(df['ma5'])
+        df['close_ma20_corr'] = df['Close'].rolling(window=20).corr(df['ma20'])
+    except Exception as e:
+        raise FeatureEngineeringError(
+            error_code="CORRELATION_CALCULATION_ERROR",
+            user_message="Failed to calculate correlation features",
+            technical_message=f"Error calculating correlations: {str(e)}"
+        )
+
     # Step 9: Generate lag features (past 5 days)
     try:
         for lag in range(1, 6):
@@ -204,6 +241,13 @@ def engineer_features(df_ohlcv: pd.DataFrame) -> pd.DataFrame:
         'macd', 'macd_signal', 'macd_histogram',
         'bb_upper', 'bb_middle', 'bb_lower', 'bb_width',
         'pct_change',
+        # New volatility features
+        'volatility_5', 'volatility_10', 'volatility_20',
+        'hl_ratio', 'hl_ratio_5',
+        'price_range', 'price_range_10',
+        # New correlation features
+        'autocorr_5', 'close_ma5_corr', 'close_ma20_corr',
+        # Lag and day-of-week features
         'lag1', 'lag2', 'lag3', 'lag4', 'lag5',
         'mon', 'tue', 'wed', 'thu', 'fri',
         'target'
