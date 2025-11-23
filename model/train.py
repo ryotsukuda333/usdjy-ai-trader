@@ -222,21 +222,23 @@ def save_model(model: XGBClassifier, df_features: pd.DataFrame) -> None:
         model.get_booster().save_model(str(model_path))
         print(f"✓ Model saved to {model_path}")
 
-        # Save feature columns list
+        # Save feature columns list (all features excluding target)
         # Convert tuple columns to simple strings (for multi-index DataFrames)
         feature_columns = []
         for col in df_features.columns:
             if col != 'target':
                 if isinstance(col, tuple):
+                    # For tuples, take first element (e.g., ('Close', 'USDJPY=X') -> 'Close')
                     feature_columns.append(col[0] if len(col) > 0 else str(col))
                 else:
+                    # For regular strings, keep as-is
                     feature_columns.append(str(col))
-        columns_path = model_dir / 'feature_columns.json'
 
+        columns_path = model_dir / 'feature_columns.json'
         with open(columns_path, 'w') as f:
             json.dump(feature_columns, f)
 
-        print(f"✓ Feature columns saved to {columns_path}")
+        print(f"✓ Feature columns saved: {len(feature_columns)} features to {columns_path}")
 
     except Exception as e:
         raise ModelError(
