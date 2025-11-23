@@ -115,6 +115,10 @@ def train_model(df_features: pd.DataFrame, test_mode: bool = False) -> XGBClassi
         # - learning_rate: 0.01 (reduced from 0.05 for better convergence)
         # - subsample: 0.6 (reduced from 0.8 to improve robustness)
         # - colsample_bytree: 0.8 (optimal from tuning)
+        # Step 4: Optimized Regularization from GridSearch (27 combinations tested)
+        # - reg_alpha: 0.5 (L1 regularization - optimized)
+        # - reg_lambda: 1.0 (L2 regularization - optimized)
+        # - min_child_weight: 1 (prevent overly-specific trees - optimized)
         n_estimators = 10 if test_mode else 100  # Changed from 300 to 100
         model = XGBClassifier(
             n_estimators=n_estimators,
@@ -122,6 +126,9 @@ def train_model(df_features: pd.DataFrame, test_mode: bool = False) -> XGBClassi
             learning_rate=0.01,  # Changed from 0.05 to 0.01
             subsample=0.6,  # Changed from 0.8 to 0.6
             colsample_bytree=0.8,
+            reg_alpha=0.5,  # L1 regularization (optimized from Step 4.2 GridSearch)
+            reg_lambda=1.0,  # L2 regularization (optimized from Step 4.2 GridSearch)
+            min_child_weight=1,  # Minimum sum of instance weight in leaf node (optimized)
             objective='binary:logistic',
             random_state=42,
             verbosity=0
