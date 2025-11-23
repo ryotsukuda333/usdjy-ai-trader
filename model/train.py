@@ -108,14 +108,19 @@ def train_model(df_features: pd.DataFrame, test_mode: bool = False) -> XGBClassi
 
         print(f"✓ Data split (8:2, no shuffle): train={len(X_train)}, test={len(X_test)}")
 
-        # Initialize XGBClassifier with fixed hyperparameters
-        # Production config: n_estimators=300; Test config: n_estimators=10
-        n_estimators = 10 if test_mode else 300
+        # Initialize XGBClassifier with optimized hyperparameters from GridSearch
+        # Optimized hyperparameters (Step 2.2):
+        # - n_estimators: 100 (reduced from 300 for efficiency)
+        # - max_depth: 4 (reduced from 5 to prevent overfitting)
+        # - learning_rate: 0.01 (reduced from 0.05 for better convergence)
+        # - subsample: 0.6 (reduced from 0.8 to improve robustness)
+        # - colsample_bytree: 0.8 (optimal from tuning)
+        n_estimators = 10 if test_mode else 100  # Changed from 300 to 100
         model = XGBClassifier(
             n_estimators=n_estimators,
-            max_depth=5,
-            learning_rate=0.05,
-            subsample=0.8,
+            max_depth=4,  # Changed from 5 to 4
+            learning_rate=0.01,  # Changed from 0.05 to 0.01
+            subsample=0.6,  # Changed from 0.8 to 0.6
             colsample_bytree=0.8,
             objective='binary:logistic',
             random_state=42,
