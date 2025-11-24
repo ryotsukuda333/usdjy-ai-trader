@@ -19,10 +19,8 @@ from features.data_fetcher import fetch_usdjpy_data
 from features.feature_engineer import engineer_features
 from model.train import train_model, save_model
 from model.predict import load_model, predict
+from model.step12_hybrid_strategy import HybridTradingStrategy
 from backtest.backtest import run_backtest
-from backtest.backtest_with_position_sizing import run_backtest_with_position_sizing
-from backtest.backtest_session_aware import run_backtest_session_aware
-from backtest.backtest_event_aware import run_backtest_event_aware
 from backtest.backtest_seasonality_aware import run_backtest_seasonality_aware
 from trader.plotter import plot_backtest_results
 from utils.errors import TraderError
@@ -104,126 +102,8 @@ def main():
         else:
             print("  ⚠ No trades generated in backtest")
 
-        # Run position sizing strategies - Step 7: Multiple Risk Levels
-        print("\n  [STEP 7] Testing multiple risk levels for optimization...")
-
+        # Initialize risk results list
         risk_results = []
-
-        # Test Fixed Risk at multiple levels (1%, 2%, 3%, 5%)
-        risk_levels = [1.0, 2.0, 3.0, 5.0]
-        for risk_pct in risk_levels:
-            strategy_name = f"Fixed Risk {risk_pct}%"
-            print(f"\n  [{strategy_name}]")
-            try:
-                trades, metrics = run_backtest_with_position_sizing(
-                    df_ohlcv, df_features, predictions,
-                    use_dynamic_risk=True,
-                    position_sizing_strategy='fixed_risk',
-                    account_size=100000,
-                    risk_percent=risk_pct
-                )
-                print(f"    ✓ {len(trades)} trades | Account: ${metrics['final_account']:,.0f} ({metrics['return_pct']:+.2f}%)")
-                risk_results.append({
-                    'strategy': strategy_name,
-                    'trades': len(trades),
-                    'return_pct': metrics['return_pct'],
-                    'final_account': metrics['final_account'],
-                    'metrics': metrics
-                })
-            except Exception as e:
-                print(f"    ⚠ Failed: {str(e)}")
-
-        # Kelly strategy (baseline)
-        print(f"\n  [Kelly Criterion 15%]")
-        try:
-            trades_kelly, metrics_kelly = run_backtest_with_position_sizing(
-                df_ohlcv, df_features, predictions,
-                use_dynamic_risk=True,
-                position_sizing_strategy='kelly',
-                account_size=100000,
-                kelly_fraction=0.15
-            )
-            print(f"    ✓ {len(trades_kelly)} trades | Account: ${metrics_kelly['final_account']:,.0f} ({metrics_kelly['return_pct']:+.2f}%)")
-            risk_results.append({
-                'strategy': 'Kelly 15%',
-                'trades': len(trades_kelly),
-                'return_pct': metrics_kelly['return_pct'],
-                'final_account': metrics_kelly['final_account'],
-                'metrics': metrics_kelly
-            })
-        except Exception as e:
-            print(f"    ⚠ Failed: {str(e)}")
-
-        # Summary of all strategies
-        if risk_results:
-            print("\n  [STRATEGY COMPARISON]")
-            print("  " + "-" * 70)
-            for result in sorted(risk_results, key=lambda x: x['return_pct'], reverse=True):
-                print(f"  {result['strategy']:20} | Return: {result['return_pct']:+6.2f}% | Account: ${result['final_account']:>10,.0f}")
-            print("  " + "-" * 70)
-
-            best_strategy = max(risk_results, key=lambda x: x['return_pct'])
-            print(f"\n  🏆 Best strategy: {best_strategy['strategy']} ({best_strategy['return_pct']:+.2f}%)")
-
-        # Step 8.3: Session-aware risk adjustment
-        print("\n  [STEP 8] Session-aware dynamic risk adjustment...")
-        print("  " + "-" * 70)
-        try:
-            trades_session, metrics_session = run_backtest_session_aware(
-                df_ohlcv, df_features, predictions,
-                account_size=100000,
-                use_dynamic_risk=True
-            )
-            print(f"  ✓ Session-aware backtest complete: {len(trades_session)} trades")
-            print(f"    Account: ${metrics_session['final_account']:,.0f} ({metrics_session['return_pct']:+.2f}%)")
-
-            # Add to comparison
-            risk_results.append({
-                'strategy': 'Session-Aware (1-3-5%)',
-                'trades': len(trades_session),
-                'return_pct': metrics_session['return_pct'],
-                'final_account': metrics_session['final_account'],
-                'metrics': metrics_session
-            })
-
-            # Update visualization with session-aware results
-            if len(trades_session) > 0:
-                print(f"    Results saved to: backtest_results_session_aware.csv")
-        except Exception as e:
-            print(f"    ⚠ Session-aware backtest failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-
-        # Step 9.4: Event-aware risk adjustment
-        print("\n  [STEP 9] Economic event-aware risk adjustment...")
-        print("  " + "-" * 70)
-        try:
-            trades_event, metrics_event = run_backtest_event_aware(
-                df_ohlcv, df_features, predictions,
-                account_size=100000,
-                use_dynamic_risk=True,
-                restriction_level='HIGH'
-            )
-            print(f"  ✓ Event-aware backtest complete: {len(trades_event)} trades")
-            print(f"    Account: ${metrics_event['final_account']:,.0f} ({metrics_event['return_pct']:+.2f}%)")
-            print(f"    Events Avoided: {metrics_event['events_avoided']}, Events Impacted: {metrics_event['events_impacted']}")
-
-            # Add to comparison
-            risk_results.append({
-                'strategy': 'Event-Aware (5% + restriction)',
-                'trades': len(trades_event),
-                'return_pct': metrics_event['return_pct'],
-                'final_account': metrics_event['final_account'],
-                'metrics': metrics_event
-            })
-
-            # Update visualization with event-aware results
-            if len(trades_event) > 0:
-                print(f"    Results saved to: backtest_results_event_aware.csv")
-        except Exception as e:
-            print(f"    ⚠ Event-aware backtest failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
 
         # Step 10.4: Seasonality-aware risk adjustment
         print("\n  [STEP 10] Seasonality-aware risk adjustment...")
@@ -239,7 +119,7 @@ def main():
 
             # Add to comparison
             risk_results.append({
-                'strategy': 'Seasonality-Aware (5% + patterns)',
+                'strategy': 'Seasonality-Aware (Step 10)',
                 'trades': len(trades_seasonality),
                 'return_pct': metrics_seasonality['return_pct'],
                 'final_account': metrics_seasonality['final_account'],
@@ -251,6 +131,58 @@ def main():
                 print(f"    Results saved to: backtest_results_seasonality_aware.csv")
         except Exception as e:
             print(f"    ⚠ Seasonality-aware backtest failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+        # Step 12: Hybrid Strategy (Seasonality + XGBoost)
+        print("\n  [STEP 12] Hybrid Trading Strategy (Seasonality + XGBoost)...")
+        print("  " + "-" * 70)
+        try:
+            # Initialize hybrid strategy with current XGBoost model
+            xgb_model_path = Path(project_root) / "model" / "xgb_model.json"
+            hybrid_strategy = HybridTradingStrategy(
+                xgb_model_path=str(xgb_model_path) if xgb_model_path.exists() else None,
+                use_seasonality=True
+            )
+
+            # Generate hybrid predictions
+            print("  Generating hybrid signals...")
+            feature_cols = [col for col in df_features.columns if col not in ['Open', 'High', 'Low', 'Close', 'Volume']]
+            hybrid_predictions = hybrid_strategy.generate_predictions(
+                df_features,
+                feature_cols=feature_cols,
+                xgb_threshold=0.5
+            )
+
+            print(f"  ✓ Hybrid predictions generated:")
+            print(f"    - Buy signals: {(hybrid_predictions['hybrid_signal'] == 1).sum()}")
+            print(f"    - Sell signals: {(hybrid_predictions['hybrid_signal'] == 0).sum()}")
+            print(f"    - Hold signals: {(hybrid_predictions['hybrid_signal'] == -1).sum()}")
+
+            # Run hybrid backtest
+            print("  Running hybrid backtest...")
+            total_return, metrics_hybrid = hybrid_strategy.backtest_hybrid_strategy(
+                df_ohlcv,
+                hybrid_predictions,
+                initial_capital=100000
+            )
+
+            print(f"  ✓ Hybrid backtest complete: {metrics_hybrid['num_trades']} trades")
+            print(f"    Total Return: {total_return:+.2f}%")
+            print(f"    Win Rate: {metrics_hybrid['win_rate']:.2f}%")
+            print(f"    Final Account: ${metrics_hybrid['final_equity']:,.0f}")
+
+            # Add to comparison
+            risk_results.append({
+                'strategy': 'Hybrid (Step 12)',
+                'trades': metrics_hybrid['num_trades'],
+                'return_pct': total_return,
+                'final_account': metrics_hybrid['final_equity'],
+                'metrics': metrics_hybrid
+            })
+
+        except Exception as e:
+            print(f"    ⚠ Hybrid backtest failed: {str(e)}")
             import traceback
             traceback.print_exc()
 
