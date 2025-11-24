@@ -23,6 +23,7 @@ from backtest.backtest import run_backtest
 from backtest.backtest_with_position_sizing import run_backtest_with_position_sizing
 from backtest.backtest_session_aware import run_backtest_session_aware
 from backtest.backtest_event_aware import run_backtest_event_aware
+from backtest.backtest_seasonality_aware import run_backtest_seasonality_aware
 from trader.plotter import plot_backtest_results
 from utils.errors import TraderError
 
@@ -221,6 +222,35 @@ def main():
                 print(f"    Results saved to: backtest_results_event_aware.csv")
         except Exception as e:
             print(f"    ⚠ Event-aware backtest failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+        # Step 10.4: Seasonality-aware risk adjustment
+        print("\n  [STEP 10] Seasonality-aware risk adjustment...")
+        print("  " + "-" * 70)
+        try:
+            trades_seasonality, metrics_seasonality = run_backtest_seasonality_aware(
+                df_ohlcv, df_features, predictions,
+                account_size=100000,
+                use_dynamic_risk=True
+            )
+            print(f"  ✓ Seasonality-aware backtest complete: {len(trades_seasonality)} trades")
+            print(f"    Account: ${metrics_seasonality['final_account']:,.0f} ({metrics_seasonality['return_pct']:+.2f}%)")
+
+            # Add to comparison
+            risk_results.append({
+                'strategy': 'Seasonality-Aware (5% + patterns)',
+                'trades': len(trades_seasonality),
+                'return_pct': metrics_seasonality['return_pct'],
+                'final_account': metrics_seasonality['final_account'],
+                'metrics': metrics_seasonality
+            })
+
+            # Update visualization with seasonality-aware results
+            if len(trades_seasonality) > 0:
+                print(f"    Results saved to: backtest_results_seasonality_aware.csv")
+        except Exception as e:
+            print(f"    ⚠ Seasonality-aware backtest failed: {str(e)}")
             import traceback
             traceback.print_exc()
 
