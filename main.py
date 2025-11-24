@@ -20,6 +20,7 @@ from features.feature_engineer import engineer_features
 from model.train import train_model, save_model
 from model.predict import load_model, predict
 from backtest.backtest import run_backtest
+from backtest.backtest_with_position_sizing import run_backtest_with_position_sizing
 from trader.plotter import plot_backtest_results
 from utils.errors import TraderError
 
@@ -79,33 +80,51 @@ def main():
         print(f"    Sell signals: {(predictions == 0).sum()}")
 
         # Task 8.4: Execute backtest and visualize
-        print("\n[8.4] Executing backtest and visualizing results...")
+        print("\n[8.4] Executing backtest with position sizing strategies...")
 
-        # Run backtest with dynamic risk management
-        print("  Running backtest simulation with dynamic risk management...")
+        # Run baseline backtest with dynamic risk management (fixed 1 unit)
+        print("  [BASELINE] Running backtest with fixed position sizing...")
         trades = run_backtest(df_ohlcv, df_features, predictions, use_dynamic_risk=True)
 
         if len(trades) > 0:
-            print(f"  ✓ Backtest complete: {len(trades)} trades")
+            print(f"  ✓ Baseline backtest complete: {len(trades)} trades")
 
-            # Calculate statistics
+            # Calculate baseline statistics
             wins = (trades['win_loss'] == 1).sum()
             losses = (trades['win_loss'] == 0).sum()
             win_rate = (wins / len(trades) * 100) if len(trades) > 0 else 0
             total_return = trades['return_percent'].sum()
             avg_return = trades['return_percent'].mean()
 
-            print(f"\n  BACKTEST STATISTICS:")
-            print(f"  - Total Trades: {len(trades)}")
-            print(f"  - Wins: {wins}, Losses: {losses}")
-            print(f"  - Win Rate: {win_rate:.2f}%")
+            print(f"  - Trades: {len(trades)}, Win Rate: {win_rate:.2f}%")
             print(f"  - Total Return: {total_return:+.2f}%")
-            print(f"  - Avg Return/Trade: {avg_return:+.3f}%")
         else:
             print("  ⚠ No trades generated in backtest")
 
+        # Run position sizing strategies
+        print("\n  [STRATEGY 1] Running with fixed risk % position sizing...")
+        try:
+            trades_fixed_risk, metrics_fixed_risk = run_backtest_with_position_sizing(
+                df_ohlcv, df_features, predictions,
+                use_dynamic_risk=True,
+                position_sizing_strategy='fixed_risk',
+                account_size=100000,
+                risk_percent=1.0
+            )
+            print(f"  ✓ Fixed Risk strategy: {len(trades_fixed_risk)} trades")
+            if metrics_fixed_risk:
+                print(f"    Account: ${metrics_fixed_risk['final_account']:,.0f} ({metrics_fixed_risk['return_pct']:+.2f}%)")
+        except Exception as e:
+            print(f"  ⚠ Fixed Risk strategy failed: {str(e)}")
+            trades_fixed_risk = None
+
+        print("\n  [STRATEGY 2] Kelly criterion position sizing...")
+        print("  ℹ️  Kelly strategy implementation in progress (deferred to Step 7)")
+        trades_kelly = None
+        metrics_kelly = None
+
         # Generate visualization
-        print("  Generating equity curve visualization...")
+        print("\n  Generating equity curve visualization...")
         if len(trades) > 0:
             plot_path = plot_backtest_results(trades)
             print(f"  ✓ Visualization saved: {plot_path}")
