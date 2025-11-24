@@ -118,10 +118,22 @@ def main():
             print(f"  ⚠ Fixed Risk strategy failed: {str(e)}")
             trades_fixed_risk = None
 
-        print("\n  [STRATEGY 2] Kelly criterion position sizing...")
-        print("  ℹ️  Kelly strategy implementation in progress (deferred to Step 7)")
-        trades_kelly = None
-        metrics_kelly = None
+        print("\n  [STRATEGY 2] Running with Kelly criterion position sizing...")
+        try:
+            trades_kelly, metrics_kelly = run_backtest_with_position_sizing(
+                df_ohlcv, df_features, predictions,
+                use_dynamic_risk=True,
+                position_sizing_strategy='kelly',
+                account_size=100000,
+                kelly_fraction=0.15
+            )
+            print(f"  ✓ Kelly strategy: {len(trades_kelly)} trades")
+            if metrics_kelly:
+                print(f"    Account: ${metrics_kelly['final_account']:,.0f} ({metrics_kelly['return_pct']:+.2f}%)")
+        except Exception as e:
+            print(f"  ⚠ Kelly strategy failed: {str(e)}")
+            trades_kelly = None
+            metrics_kelly = None
 
         # Generate visualization
         print("\n  Generating equity curve visualization...")

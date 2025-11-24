@@ -136,12 +136,16 @@ def run_backtest_with_position_sizing(
                         )
                     else:  # kelly
                         # Use historical statistics from completed trades
-                        win_rate = sizer.win_rate if sizer.trade_count > 0 else 0.54
+                        win_rate = (sizer.win_count / sizer.trade_count) if sizer.trade_count > 0 else 0.54
                         avg_win = 0.60  # From analysis
                         avg_loss = 0.315  # From analysis
                         position_size, _ = sizer.calculate_position_size_kelly(
                             entry_price, dynamic_sl_level, win_rate, avg_win, avg_loss
                         )
+                        # Additional safety cap for Kelly strategy
+                        # Kelly can be aggressive at start, so cap at 10% of account
+                        max_kelly_position = sizer.current_account * 0.10
+                        position_size = min(position_size, max_kelly_position)
 
                     position_pct = (position_size / sizer.current_account) * 100
                     print(f"📈 BUY signal at {entry_date}: price={entry_price:.2f}")
@@ -279,6 +283,8 @@ def run_backtest_with_position_sizing(
     except BacktestError:
         raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise BacktestError(
             error_code="BACKTEST_FAILED",
             user_message="Backtest execution failed",
