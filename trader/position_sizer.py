@@ -294,5 +294,6 @@ def create_position_sizer_kelly(account_size: float = 100000,
     return PositionSizer(
         account_size=account_size,
         initial_risk_percent=None,
-        kelly_fraction=kelly_fraction
+        kelly_fraction=kelly_fraction,
+        max_position_pct=10.0  # Safety cap: max 10% per trade
     )

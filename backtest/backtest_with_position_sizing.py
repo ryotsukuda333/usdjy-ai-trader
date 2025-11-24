@@ -16,6 +16,7 @@ from typing import Optional, Tuple
 from utils.errors import BacktestError
 from trader.dynamic_risk_manager import DynamicRiskManager, initialize_risk_manager
 from trader.position_sizer import PositionSizer, create_position_sizer_fixed_risk, create_position_sizer_kelly
+from trader.drawdown_manager import create_drawdown_manager
 
 
 def run_backtest_with_position_sizing(
@@ -100,6 +101,13 @@ def run_backtest_with_position_sizing(
     dynamic_tp_level = None
     dynamic_sl_level = None
 
+    # Initialize drawdown manager
+    dd_manager = create_drawdown_manager(
+        account_size=account_size,
+        max_dd_threshold=5.0,  # 5% drawdown threshold
+        max_absolute_dd=10.0   # 10% absolute maximum drawdown
+    )
+
     try:
         for i in range(len(df_ohlcv)):
             current_date = df_ohlcv.index[i]
@@ -147,6 +155,10 @@ def run_backtest_with_position_sizing(
                         max_kelly_position = sizer.current_account * 0.10
                         position_size = min(position_size, max_kelly_position)
 
+                    # Apply drawdown-based risk multiplier
+                    risk_multiplier = dd_manager.get_risk_multiplier()
+                    position_size = position_size * risk_multiplier
+
                     position_pct = (position_size / sizer.current_account) * 100
                     print(f"📈 BUY signal at {entry_date}: price={entry_price:.2f}")
                     print(f"   TP: {dynamic_tp_level:.5f} (+{tp_pct:.3f}%), SL: {dynamic_sl_level:.5f} (-{sl_pct:.3f}%)")
@@ -179,6 +191,7 @@ def run_backtest_with_position_sizing(
                     })
 
                     sizer.update_account(pnl_usd)
+                    dd_manager.update_account(sizer.current_account)
                     print(f"🛑 STOP LOSS at {current_date}: {exit_price:.2f}, return={return_pct:.3f}%, account=${sizer.current_account:,.0f}")
                     position_open = False
 
@@ -204,6 +217,7 @@ def run_backtest_with_position_sizing(
 
                     try:
                         sizer.update_account(pnl_usd)
+                        dd_manager.update_account(sizer.current_account)
                     except Exception as e:
                         print(f"⚠️ Account update error: {e}")
                         raise
@@ -231,6 +245,7 @@ def run_backtest_with_position_sizing(
                     })
 
                     sizer.update_account(pnl_usd)
+                    dd_manager.update_account(sizer.current_account)
                     print(f"📉 SELL signal at {current_date}: {exit_price:.2f}, return={return_pct:.3f}%, account=${sizer.current_account:,.0f}")
                     position_open = False
 
@@ -255,6 +270,7 @@ def run_backtest_with_position_sizing(
             })
 
             sizer.update_account(pnl_usd)
+            dd_manager.update_account(sizer.current_account)
 
         # Create trades DataFrame
         trades_df = pd.DataFrame(trades)

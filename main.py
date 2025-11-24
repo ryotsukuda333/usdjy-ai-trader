@@ -101,24 +101,37 @@ def main():
         else:
             print("  ⚠ No trades generated in backtest")
 
-        # Run position sizing strategies
-        print("\n  [STRATEGY 1] Running with fixed risk % position sizing...")
-        try:
-            trades_fixed_risk, metrics_fixed_risk = run_backtest_with_position_sizing(
-                df_ohlcv, df_features, predictions,
-                use_dynamic_risk=True,
-                position_sizing_strategy='fixed_risk',
-                account_size=100000,
-                risk_percent=1.0
-            )
-            print(f"  ✓ Fixed Risk strategy: {len(trades_fixed_risk)} trades")
-            if metrics_fixed_risk:
-                print(f"    Account: ${metrics_fixed_risk['final_account']:,.0f} ({metrics_fixed_risk['return_pct']:+.2f}%)")
-        except Exception as e:
-            print(f"  ⚠ Fixed Risk strategy failed: {str(e)}")
-            trades_fixed_risk = None
+        # Run position sizing strategies - Step 7: Multiple Risk Levels
+        print("\n  [STEP 7] Testing multiple risk levels for optimization...")
 
-        print("\n  [STRATEGY 2] Running with Kelly criterion position sizing...")
+        risk_results = []
+
+        # Test Fixed Risk at multiple levels (1%, 2%, 3%, 5%)
+        risk_levels = [1.0, 2.0, 3.0, 5.0]
+        for risk_pct in risk_levels:
+            strategy_name = f"Fixed Risk {risk_pct}%"
+            print(f"\n  [{strategy_name}]")
+            try:
+                trades, metrics = run_backtest_with_position_sizing(
+                    df_ohlcv, df_features, predictions,
+                    use_dynamic_risk=True,
+                    position_sizing_strategy='fixed_risk',
+                    account_size=100000,
+                    risk_percent=risk_pct
+                )
+                print(f"    ✓ {len(trades)} trades | Account: ${metrics['final_account']:,.0f} ({metrics['return_pct']:+.2f}%)")
+                risk_results.append({
+                    'strategy': strategy_name,
+                    'trades': len(trades),
+                    'return_pct': metrics['return_pct'],
+                    'final_account': metrics['final_account'],
+                    'metrics': metrics
+                })
+            except Exception as e:
+                print(f"    ⚠ Failed: {str(e)}")
+
+        # Kelly strategy (baseline)
+        print(f"\n  [Kelly Criterion 15%]")
         try:
             trades_kelly, metrics_kelly = run_backtest_with_position_sizing(
                 df_ohlcv, df_features, predictions,
@@ -127,13 +140,27 @@ def main():
                 account_size=100000,
                 kelly_fraction=0.15
             )
-            print(f"  ✓ Kelly strategy: {len(trades_kelly)} trades")
-            if metrics_kelly:
-                print(f"    Account: ${metrics_kelly['final_account']:,.0f} ({metrics_kelly['return_pct']:+.2f}%)")
+            print(f"    ✓ {len(trades_kelly)} trades | Account: ${metrics_kelly['final_account']:,.0f} ({metrics_kelly['return_pct']:+.2f}%)")
+            risk_results.append({
+                'strategy': 'Kelly 15%',
+                'trades': len(trades_kelly),
+                'return_pct': metrics_kelly['return_pct'],
+                'final_account': metrics_kelly['final_account'],
+                'metrics': metrics_kelly
+            })
         except Exception as e:
-            print(f"  ⚠ Kelly strategy failed: {str(e)}")
-            trades_kelly = None
-            metrics_kelly = None
+            print(f"    ⚠ Failed: {str(e)}")
+
+        # Summary of all strategies
+        if risk_results:
+            print("\n  [STRATEGY COMPARISON]")
+            print("  " + "-" * 70)
+            for result in sorted(risk_results, key=lambda x: x['return_pct'], reverse=True):
+                print(f"  {result['strategy']:20} | Return: {result['return_pct']:+6.2f}% | Account: ${result['final_account']:>10,.0f}")
+            print("  " + "-" * 70)
+
+            best_strategy = max(risk_results, key=lambda x: x['return_pct'])
+            print(f"\n  🏆 Best strategy: {best_strategy['strategy']} ({best_strategy['return_pct']:+.2f}%)")
 
         # Generate visualization
         print("\n  Generating equity curve visualization...")
