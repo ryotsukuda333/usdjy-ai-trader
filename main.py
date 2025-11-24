@@ -21,6 +21,7 @@ from model.train import train_model, save_model
 from model.predict import load_model, predict
 from backtest.backtest import run_backtest
 from backtest.backtest_with_position_sizing import run_backtest_with_position_sizing
+from backtest.backtest_session_aware import run_backtest_session_aware
 from trader.plotter import plot_backtest_results
 from utils.errors import TraderError
 
@@ -161,6 +162,35 @@ def main():
 
             best_strategy = max(risk_results, key=lambda x: x['return_pct'])
             print(f"\n  🏆 Best strategy: {best_strategy['strategy']} ({best_strategy['return_pct']:+.2f}%)")
+
+        # Step 8.3: Session-aware risk adjustment
+        print("\n  [STEP 8] Session-aware dynamic risk adjustment...")
+        print("  " + "-" * 70)
+        try:
+            trades_session, metrics_session = run_backtest_session_aware(
+                df_ohlcv, df_features, predictions,
+                account_size=100000,
+                use_dynamic_risk=True
+            )
+            print(f"  ✓ Session-aware backtest complete: {len(trades_session)} trades")
+            print(f"    Account: ${metrics_session['final_account']:,.0f} ({metrics_session['return_pct']:+.2f}%)")
+
+            # Add to comparison
+            risk_results.append({
+                'strategy': 'Session-Aware (1-3-5%)',
+                'trades': len(trades_session),
+                'return_pct': metrics_session['return_pct'],
+                'final_account': metrics_session['final_account'],
+                'metrics': metrics_session
+            })
+
+            # Update visualization with session-aware results
+            if len(trades_session) > 0:
+                print(f"    Results saved to: backtest_results_session_aware.csv")
+        except Exception as e:
+            print(f"    ⚠ Session-aware backtest failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
         # Generate visualization
         print("\n  Generating equity curve visualization...")
