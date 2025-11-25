@@ -88,7 +88,7 @@ def run_phase5b_backtest():
         df=df_features,
         feature_cols=feature_cols,
         xgb_threshold=0.45,  # Best parameters from Grid Search
-        quality_threshold=0.60
+        quality_threshold=0.40  # Adjusted from 0.60 for realistic signal filtering
     )
 
     print(f"✓ Generated {len(predictions)} predictions ({time.time() - pred_start:.1f}s)")

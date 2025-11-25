@@ -168,7 +168,7 @@ class EnsembleTrainer:
             hidden_layer_sizes=(128, 64, 32), activation='relu',
             solver='adam', learning_rate_init=0.001, batch_size=32,
             max_iter=500, early_stopping=True, validation_fraction=0.2,
-            random_state=self.random_state, n_jobs=-1
+            random_state=self.random_state
         )
 
         model.fit(X_train_scaled, y_train)

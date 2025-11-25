@@ -116,7 +116,7 @@ class HybridTradingStrategyImproved:
         df: pd.DataFrame,
         feature_cols: List[str],
         xgb_threshold: float = 0.5,
-        quality_threshold: float = 0.60
+        quality_threshold: float = 0.40
     ) -> pd.DataFrame:
         """
         Generate predictions with Phase 5-B signal quality filtering
@@ -193,7 +193,8 @@ class HybridTradingStrategyImproved:
                 self.filter.filter_signal(
                     quality_score=results['quality_score'].iloc[i],
                     signal=results['signal'].iloc[i],
-                    confidence=results['confidence'].iloc[i]
+                    confidence=results['confidence'].iloc[i],
+                    quality_threshold=quality_threshold
                 )
                 for i in range(len(results))
             ]
@@ -233,10 +234,13 @@ class HybridTradingStrategyImproved:
         weighted_prob = xgb_prob * (0.5 + 0.5 * seasonality_score)
 
         # Determine base signal
-        if weighted_prob >= 0.60:
+        # Adjusted thresholds for weak model (AUC 0.577)
+        # Original: buy >= 0.60, sell < 0.40 → almost no signals generated
+        # New: buy >= 0.52, sell < 0.48 → realistic signal generation
+        if weighted_prob >= 0.52:
             signal = 1
             confidence = min(weighted_prob, 1.0)
-        elif weighted_prob < 0.40:
+        elif weighted_prob < 0.48:
             signal = 0
             confidence = min(1.0 - weighted_prob, 1.0)
         else:

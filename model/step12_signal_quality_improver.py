@@ -328,7 +328,7 @@ class SignalQualityScorer:
 class SignalQualityFilter:
     """信号品質に基づいたフィルタリングロジック"""
 
-    # 信号受け入れ基準 (調整版)
+    # デフォルト信号受け入れ基準 (調整版)
     THRESHOLDS = {
         'strong': 0.65,      # 即座に実行
         'medium': 0.50,      # 確認待ち
@@ -340,7 +340,8 @@ class SignalQualityFilter:
     def filter_signal(
         quality_score: float,
         signal: int,  # 1: buy, 0: sell, -1: hold
-        confidence: float
+        confidence: float,
+        quality_threshold: float = 0.40
     ) -> Tuple[int, str, bool]:
         """
         信号品質に基づいてシグナルをフィルタリング
@@ -349,6 +350,7 @@ class SignalQualityFilter:
             quality_score: Signal quality score (0.0-1.0)
             signal: Original signal (1=buy, 0=sell, -1=hold)
             confidence: Original confidence from hybrid strategy
+            quality_threshold: Minimum quality score for signal execution (default 0.40)
 
         Returns:
             Tuple[filtered_signal, decision_reason, should_execute]:
@@ -356,10 +358,15 @@ class SignalQualityFilter:
                 - decision_reason: 判定理由テキスト
                 - should_execute: 実行すべきか
         """
-        if quality_score >= SignalQualityFilter.THRESHOLDS['strong']:
+        # Dynamic threshold application
+        strong_threshold = quality_threshold + 0.25
+        medium_threshold = quality_threshold
+        weak_threshold = quality_threshold - 0.10
+
+        if quality_score >= strong_threshold:
             return signal, "STRONG_QUALITY_SIGNAL", True
 
-        elif quality_score >= SignalQualityFilter.THRESHOLDS['medium']:
+        elif quality_score >= medium_threshold:
             if signal == 1 and confidence > 0.6:
                 return signal, "MEDIUM_QUALITY_SIGNAL", True
             elif signal == 0 and confidence > 0.5:
@@ -367,7 +374,7 @@ class SignalQualityFilter:
             else:
                 return -1, "AWAITING_CONFIRMATION", False
 
-        elif quality_score >= SignalQualityFilter.THRESHOLDS['weak']:
+        elif quality_score >= weak_threshold:
             return -1, "WEAK_QUALITY_SIGNAL", False
 
         else:
