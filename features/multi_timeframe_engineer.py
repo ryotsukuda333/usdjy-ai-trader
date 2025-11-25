@@ -13,9 +13,12 @@ Features generated per timeframe:
 - Moving average slopes
 - RSI (Relative Strength Index)
 - MACD (Moving Average Convergence Divergence)
-- Bollinger Bands
-- Daily percentage change
-- Lag features (lag 1-3)
+- Bollinger Bands (including width)
+- Volatility metrics (5/10/20 period)
+- Price features (pct_change, hl_ratio, price_range)
+- Autocorrelation features
+- Lag features (lag 1-5)
+- Day-of-week dummy variables (1D layer)
 """
 
 import pandas as pd
@@ -75,7 +78,8 @@ class MultiTimeframeFeatureEngineer:
         df: pd.DataFrame,
         timeframe: str,
         lag_features: bool = True,
-        lag_periods: List[int] = [1, 2, 3]
+        lag_periods: List[int] = [1, 2, 3, 4, 5],
+        extended_features: bool = True
     ) -> pd.DataFrame:
         """Engineer technical features for a single timeframe.
 
@@ -83,7 +87,8 @@ class MultiTimeframeFeatureEngineer:
             df: OHLCV DataFrame with columns [Open, High, Low, Close, Volume]
             timeframe: Timeframe key ('1d', '4h', '1h', '15m', '5m')
             lag_features: Whether to generate lag features
-            lag_periods: Lag periods to generate [1, 2, 3]
+            lag_periods: Lag periods to generate [1, 2, 3, 4, 5]
+            extended_features: Whether to generate volatility, autocorr, price features (for XGBoost compatibility)
 
         Returns:
             pd.DataFrame: DataFrame with engineered features
@@ -119,27 +124,72 @@ class MultiTimeframeFeatureEngineer:
 
         # Bollinger Bands
         bb = ta.volatility.BollingerBands(df_eng['Close'], window=20, window_dev=2)
-        df_eng['bb_high'] = bb.bollinger_hband()
-        df_eng['bb_mid'] = bb.bollinger_mavg()
-        df_eng['bb_low'] = bb.bollinger_lband()
+        df_eng['bb_upper'] = bb.bollinger_hband()
+        df_eng['bb_middle'] = bb.bollinger_mavg()
+        df_eng['bb_lower'] = bb.bollinger_lband()
+        df_eng['bb_width'] = df_eng['bb_upper'] - df_eng['bb_lower']
 
-        # Price changes
-        df_eng['close_pct_change'] = df_eng['Close'].pct_change() * 100
-        df_eng['high_low_ratio'] = (df_eng['High'] - df_eng['Low']) / df_eng['Close']
+        # Price changes and ratios
+        df_eng['pct_change'] = df_eng['Close'].pct_change() * 100
+        df_eng['hl_ratio'] = (df_eng['High'] - df_eng['Low']) / df_eng['Close']
+        df_eng['hl_ratio_5'] = (df_eng['High'].rolling(5).max() - df_eng['Low'].rolling(5).min()) / df_eng['Close']
+        df_eng['price_range'] = (df_eng['High'] - df_eng['Low'])
+        df_eng['price_range_10'] = (df_eng['High'].rolling(10).max() - df_eng['Low'].rolling(10).min())
 
-        # Lag features
+        # Extended features for XGBoost (volatility, autocorrelation, etc.)
+        if extended_features:
+            # Volatility metrics
+            df_eng['volatility_5'] = df_eng['Close'].pct_change().rolling(5).std() * 100
+            df_eng['volatility_10'] = df_eng['Close'].pct_change().rolling(10).std() * 100
+            df_eng['volatility_20'] = df_eng['Close'].pct_change().rolling(20).std() * 100
+
+            # Autocorrelation and correlation with MAs (optimized with vectorized operations)
+            # Autocorrelation using numpy for better performance
+            def compute_autocorr(x):
+                try:
+                    return np.corrcoef(x[:-1], x[1:])[0, 1]
+                except:
+                    return 0.0
+
+            df_eng['autocorr_5'] = df_eng['Close'].rolling(5).apply(compute_autocorr, raw=True)
+
+            # Correlation with moving averages (simplified: lag-0 correlation)
+            if 'ma5' in df_eng.columns:
+                df_eng['close_ma5_corr'] = df_eng['Close'].rolling(5).cov(df_eng['ma5']) / (
+                    df_eng['Close'].rolling(5).std() * df_eng['ma5'].rolling(5).std()
+                )
+            else:
+                df_eng['close_ma5_corr'] = 0.0
+
+            if 'ma20' in df_eng.columns:
+                df_eng['close_ma20_corr'] = df_eng['Close'].rolling(5).cov(df_eng['ma20']) / (
+                    df_eng['Close'].rolling(5).std() * df_eng['ma20'].rolling(5).std()
+                )
+            else:
+                df_eng['close_ma20_corr'] = 0.0
+
+            # Day-of-week dummy variables (only for 1D timeframe, for XGBoost)
+            if timeframe == '1d':
+                df_eng['mon'] = (df_eng.index.dayofweek == 0).astype(int)
+                df_eng['tue'] = (df_eng.index.dayofweek == 1).astype(int)
+                df_eng['wed'] = (df_eng.index.dayofweek == 2).astype(int)
+                df_eng['thu'] = (df_eng.index.dayofweek == 3).astype(int)
+                df_eng['fri'] = (df_eng.index.dayofweek == 4).astype(int)
+
+        # Lag features (extended to 5 periods)
         if lag_features:
             for period in lag_periods:
-                df_eng[f'close_lag{period}'] = df_eng['Close'].shift(period)
-                df_eng[f'volume_lag{period}'] = df_eng['Volume'].shift(period)
+                df_eng[f'lag{period}'] = df_eng['Close'].shift(period)
+                # Note: Removing volume lag for compatibility; can be re-added if needed
+                # df_eng[f'volume_lag{period}'] = df_eng['Volume'].shift(period)
 
-        # Day of week (if daily or higher)
-        if timeframe in ['1d', '4h', '1h']:
+        # Day of week (if daily or higher, for non-XGBoost features)
+        if timeframe in ['1d', '4h', '1h'] and not extended_features:
             df_eng['day_of_week'] = df_eng.index.dayofweek
             df_eng['hour_of_day'] = df_eng.index.hour
 
         # Drop initial NaN values (from MAs and indicators)
-        max_lookback = max(params['ma_periods'] + [params['rsi_period'], params['macd_slow']])
+        max_lookback = max(params['ma_periods'] + [params['rsi_period'], params['macd_slow'], 20])
         df_eng = df_eng.iloc[max_lookback:].copy()
 
         return df_eng
